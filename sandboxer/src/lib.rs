@@ -13,11 +13,9 @@ use wasmtime::{Config, Engine, Func, Linker, Module, Store, Val};
 use wasmtime_wasi::sync::WasiCtxBuilder;
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx};
 
-pub struct BitsPerTick(pub usize);
-
 pub fn our_engine() -> Engine {
     Engine::new(
-        Config::new().async_support(true), // .epoch_interruption(true)
+        Config::new().async_support(true), // .epoch_interruption(true) // TODO epoch interruption
     )
     .unwrap()
 }
@@ -107,7 +105,7 @@ pub struct ComputerVm {
 impl ComputerVm {
     pub async fn launch_module(module: Module, computer: Computer) -> Result<ComputerVm> {
         let mut store = Store::new(module.engine(), ComputerVmState::new(computer)?);
-        // store.epoch_deadline_async_yield_and_update(100);
+        // store.epoch_deadline_async_yield_and_update(100); // TODO epoch interruption
 
         let mut linker = Linker::new(module.engine());
         wasmtime_wasi::add_to_linker(&mut linker, |s: &mut ComputerVmState| &mut s.wasi)?;

@@ -30,7 +30,6 @@ fn parse_dev(name: &str) -> (&str, Option<u8>) {
     )
 }
 
-// TODO impl on some wrapper which hold state properly (design this)
 #[async_trait::async_trait]
 impl WasiDir for DevicesDir {
     fn as_any(&self) -> &dyn Any {
@@ -157,7 +156,7 @@ impl WasiDir for DevicesDir {
     }
 
     async fn get_filestat(&self) -> Result<Filestat, Error> {
-        // TODO
+        // TODO filestat
         Ok(Filestat {
             device_id: 0,
             inode: 1,
@@ -217,6 +216,7 @@ impl WasiDir for DevicesDir {
     }
 }
 
+// TODO begin to fail when device is removed from the world
 struct OpenDuplexLinkFile {
     link: AttachedDuplexLink,
     read: bool,
