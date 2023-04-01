@@ -1,0 +1,21 @@
+[package]
+name = "sandboxer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+wasmtime = "7.0.0"
+wasmtime-wasi = "7.0.0"
+wasi-common = "7.0.0"
+anyhow = "1.0.70"
+utf-8 = "0.7.6"
+tokio = { version = "1.27.0", features = ["rt-multi-thread", "macros"] }
+uuid = { version = "1.3.0", features = ["v4"] }
+async-trait = "0.1.68"
+rustix = "0.37.5"
+cap-std = "1.0.9"
+
+[[bin]]
+name = "sim"
