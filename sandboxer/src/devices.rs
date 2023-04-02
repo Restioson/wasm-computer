@@ -15,7 +15,6 @@ struct Buffer {
 
 #[derive(Default)]
 struct DuplexLink {
-    // TODO: inode, device id
     duplex_bufs: [Mutex<Buffer>; 2],
 }
 

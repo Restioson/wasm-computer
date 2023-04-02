@@ -66,7 +66,6 @@ mod device {
                 }
             }
 
-            // TODO check that it is correct fd
             let wait = devices.iter().map(|device| {
                 let computer = caller.data().computer.read().unwrap();
                 match decompose_device(*device) {
