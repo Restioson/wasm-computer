@@ -728,6 +728,14 @@ checksum = "fed44880c466736ef9a5c5b5facefb5ed0785676d0c02d612db14e54f0d84286"
 name = "host_api"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
+ "host_api_sys",
+]
+
+[[package]]
+name = "host_api_sys"
+version = "0.1.0"
+dependencies = [
  "bitflags 2.0.2",
  "bytemuck",
 ]
@@ -1170,7 +1178,7 @@ dependencies = [
  "cap-std",
  "event-listener",
  "futures",
- "host_api",
+ "host_api_sys",
  "rustix 0.37.5",
  "tokio",
  "utf-8",

@@ -1,39 +1,33 @@
-use bytemuck::{Pod, Zeroable};
+use bytemuck::Zeroable;
+use host_api_sys as ffi;
+use std::os::fd::{AsRawFd, BorrowedFd};
 
-#[cfg(target_os = "wasi")]
-pub mod call_host;
+pub fn wait_until_ready_for_read<'a>(fds: &[BorrowedFd<'a>]) -> Vec<BorrowedFd<'a>> {
+    let interests: Vec<ffi::Interest> = fds
+        .iter()
+        .map(|fd| ffi::Interest {
+            fd: fd.as_raw_fd(),
+            interest_flags: ffi::InterestFlags::READ.bits(),
+        })
+        .collect();
 
-bitflags::bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    #[repr(transparent)]
-    pub struct InterestFlags: u32 {
-        const READ = 0b01;
-        const WRITE = 0b10;
-    }
-}
+    let mut ready: Vec<ffi::Ready> = fds.iter().map(|_| ffi::Ready::zeroed()).collect();
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Pod, Zeroable)]
-#[repr(C)]
-pub struct Interest {
-    pub fd: u32,
-    pub interest_flags: u32,
-}
+    // SAFETY: interests and ready have equal length and are both specified correctly.
+    // All interests are open and valid fds as per BorrowedFd contract.
+    let n_ready = unsafe {
+        host_api_sys::wait_until_ready(
+            interests.as_ptr() as i64,
+            ready.as_mut_ptr() as i64,
+            interests.len() as i64,
+        )
+    };
 
-impl Interest {
-    pub fn flags(&self) -> InterestFlags {
-        InterestFlags::from_bits_retain(self.interest_flags)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Pod, Zeroable)]
-#[repr(C)]
-pub struct Ready {
-    pub fd: u32,
-    pub interest_flags: u32,
-}
-
-impl Ready {
-    pub fn flags(&self) -> InterestFlags {
-        InterestFlags::from_bits_retain(self.interest_flags)
-    }
+    // SAFETY: `wait_until_ready` only returns fds given in interests, which are borrowed in param.
+    // No zero fds will be returned as we only take up to n_ready fds
+    ready
+        .into_iter()
+        .take(n_ready as usize)
+        .map(|ready| unsafe { BorrowedFd::borrow_raw(ready.fd) })
+        .collect()
 }

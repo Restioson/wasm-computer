@@ -1,17 +1,13 @@
 pub mod virtual_fs;
 
-use crate::ComputerVmState;
-use anyhow::{Context, Result};
+use event_listener::Event;
+use futures::future::Either;
 use std::collections::VecDeque;
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::task::{Poll, Waker};
-use event_listener::{Event, EventListener};
-use futures::future::Either;
-use wasmtime::{AsContextMut, Func};
 
 #[derive(Default)]
+// TODO buffer full
 struct Buffer {
     buf: VecDeque<u8>,
     on_send: Event,
@@ -62,37 +58,51 @@ impl AttachedDuplexLink {
     }
 }
 
-struct Notifier {
-    waker: Waker,
-}
-
+#[derive(Default)]
 pub struct Devices {
     ethernet_links: Vec<AttachedDuplexLink>,
     wireless_links: Vec<AttachedDuplexLink>,
 }
 
-impl Devices {
-    pub fn new() -> Devices {
-        Devices {
-            ethernet_links: vec![],
-            wireless_links: vec![],
-        }
-    }
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum DeviceType {
+    Ethernet,
+    Wireless,
+}
 
+impl Devices {
     pub fn add_ethernet(&mut self, link: AttachedDuplexLink) {
         self.ethernet_links.push(link);
     }
 
-    pub fn is_ready_for_read(&self, device_id: u64) -> bool {
-        self.ethernet_links[device_id as usize].read_buf().buf.len() > 0
+    fn device(&self, dev_type: DeviceType, dev_idx: usize) -> Option<&AttachedDuplexLink> {
+        match dev_type {
+            DeviceType::Ethernet => self.ethernet_links.get(dev_idx),
+            DeviceType::Wireless => self.wireless_links.get(dev_idx),
+        }
     }
 
-    pub fn wait_until_ready_for_read(&self, device_id: u64) -> impl Future<Output = ()> + Unpin {
-        let listener = self.ethernet_links[device_id as usize].read_buf().on_send.listen();
-        if !self.is_ready_for_read(device_id) {
+    pub fn contains(&self, dev_type: DeviceType, dev_idx: usize) -> bool {
+        self.device(dev_type, dev_idx).is_some()
+    }
+
+    pub fn is_ready_for_read(&self, dev_type: DeviceType, dev_idx: usize) -> Option<bool> {
+        self.device(dev_type, dev_idx)
+            .map(|dev| !dev.read_buf().buf.is_empty())
+    }
+
+    pub fn wait_until_ready_for_read(
+        &self,
+        dev_type: DeviceType,
+        dev_idx: usize,
+    ) -> Option<impl Future<Output = ()> + Unpin> {
+        let dev = self.device(dev_type, dev_idx)?;
+        let listener = dev.read_buf().on_send.listen();
+
+        Some(if dev.read_buf().buf.is_empty() {
             Either::Left(listener)
         } else {
             Either::Right(futures::future::ready(()))
-        }
+        })
     }
 }

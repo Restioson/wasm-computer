@@ -1,11 +1,10 @@
 pub mod devices;
 mod host_api;
 
-use crate::devices::{virtual_fs::DevicesDir, Devices, AttachedDuplexLink};
+use crate::devices::{virtual_fs::DevicesDir, AttachedDuplexLink, Devices};
 use anyhow::Result;
 use std::collections::VecDeque;
 use std::io::BufReader;
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use utf8::BufReadDecoder;
@@ -32,7 +31,7 @@ impl Computer {
     pub fn create() -> Result<Computer> {
         let computer = Computer {
             id: Uuid::new_v4(),
-            devices: Devices::new(),
+            devices: Devices::default(),
         };
 
         std::fs::create_dir_all(computer.home_dir())?;
@@ -65,6 +64,7 @@ pub struct ComputerVmState {
     computer: Arc<RwLock<Computer>>,
 }
 
+// TODO: device number allocation table
 impl ComputerVmState {
     fn new(computer: Computer) -> Result<Self> {
         let stdout = Arc::new(RwLock::new(VecDeque::new()));
@@ -76,6 +76,7 @@ impl ComputerVmState {
             .stderr(Box::new(WritePipe::from_shared(stderr.clone())))
             .stdin(Box::new(ReadPipe::from_shared(stdin.clone())))
             .preopened_dir(
+                // TODO: wrap tokio_wasi and shift inode up each by, say, 100
                 Dir::open_ambient_dir(computer.root_dir(), ambient_authority())?,
                 "/",
             )?
@@ -109,7 +110,11 @@ pub struct ComputerVm {
 }
 
 impl ComputerVm {
-    pub async fn launch_module(module: Module, computer: Computer, arg: &str) -> Result<ComputerVm> {
+    pub async fn launch_module(
+        module: Module,
+        computer: Computer,
+        arg: &str,
+    ) -> Result<ComputerVm> {
         let mut store = Store::new(module.engine(), ComputerVmState::new(computer)?);
         // store.epoch_deadline_async_yield_and_update(100); // TODO epoch interruption
 
@@ -130,7 +135,13 @@ impl ComputerVm {
     }
 
     pub fn add_ethernet(&mut self, link: AttachedDuplexLink) {
-        self.store.data_mut().computer.write().unwrap().devices_mut().add_ethernet(link)
+        self.store
+            .data_mut()
+            .computer
+            .write()
+            .unwrap()
+            .devices_mut()
+            .add_ethernet(link)
     }
 
     pub async fn resume(&mut self) -> Result<()> {
@@ -145,7 +156,10 @@ impl ComputerVm {
         let stdout = BufReadDecoder::read_to_string_lossy(BufReader::new(&mut *stdout)).unwrap();
 
         println!("=========================================");
-        println!("Computer {} finished execution", self.store.data().computer.read().unwrap().id);
+        println!(
+            "Computer {} finished execution",
+            self.store.data().computer.read().unwrap().id
+        );
         println!("Stdout: {stdout}");
 
         let mut stderr = self.store.data().stderr.write().unwrap();

@@ -1,5 +1,7 @@
 [workspace]
 members = [
     "sandboxer",
-    "guest_test"
+    "guest_test",
+    "host_api",
+    "host_api_sys",
 ]

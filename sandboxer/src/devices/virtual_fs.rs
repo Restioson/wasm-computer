@@ -1,16 +1,36 @@
-use crate::devices::AttachedDuplexLink;
+use crate::devices::{AttachedDuplexLink, DeviceType};
 use crate::Computer;
 use async_trait::async_trait;
 use std::any::Any;
 use std::io::Write;
-use std::io::{BufReader, IoSlice, IoSliceMut, Read};
+use std::io::{IoSlice, IoSliceMut, Read};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use utf8::BufReadDecoder;
 use wasi_common::dir::{ReaddirCursor, ReaddirEntity};
 use wasi_common::file::{FdFlags, FileType, Filestat, OFlags};
 use wasi_common::{Error, ErrorExt};
 use wasi_common::{SystemTimeSpec, WasiDir, WasiFile};
+
+const DEV_MAJOR: u16 = 511;
+const ETHERNET_MAJOR: u16 = 510;
+const WIRELESS_MAJOR: u16 = 509;
+
+fn make_device_number(major: u16, minor: u32) -> u32 {
+    ((major as u32) << 20) | minor
+}
+
+pub fn decompose_device(device_no: u64) -> Option<(DeviceType, usize)> {
+    let major = ((device_no >> 20) & ((1 << 12) - 1)) as u16;
+    let minor = (device_no & ((1 << 20) - 1)) as u32;
+
+    let dev_type = match major {
+        ETHERNET_MAJOR => DeviceType::Ethernet,
+        WIRELESS_MAJOR => DeviceType::Wireless,
+        _ => return None,
+    };
+
+    Some((dev_type, minor as usize))
+}
 
 pub struct DevicesDir {
     computer: Arc<RwLock<Computer>>,
@@ -59,14 +79,15 @@ impl WasiDir for DevicesDir {
 
         match (name, idx) {
             ("ethernet" | "wireless", Some(idx)) => {
-                let net = if name == "ethernet" {
-                    devs.ethernet_links.get(idx as usize)
+                let (dev_major, net) = if name == "ethernet" {
+                    (ETHERNET_MAJOR, devs.ethernet_links.get(idx as usize))
                 } else {
-                    devs.wireless_links.get(idx as usize)
+                    (WIRELESS_MAJOR, devs.wireless_links.get(idx as usize))
                 };
 
                 let open_file = OpenDuplexLinkFile {
                     link: net.ok_or_else(Error::not_found)?.clone(),
+                    device_number: make_device_number(dev_major, idx as u32),
                     read,
                     write,
                 };
@@ -74,9 +95,7 @@ impl WasiDir for DevicesDir {
                 Ok(Box::new(open_file))
             }
             (".", None) => Ok(Box::new(OpenDevDirFile)),
-            _ => {
-                Err(Error::not_found())
-            }
+            _ => Err(Error::not_found()),
         }
     }
 
@@ -151,9 +170,8 @@ impl WasiDir for DevicesDir {
     }
 
     async fn get_filestat(&self) -> Result<Filestat, Error> {
-        // TODO filestat
         Ok(Filestat {
-            device_id: 0,
+            device_id: make_device_number(DEV_MAJOR, 0) as u64,
             inode: 1,
             filetype: FileType::Directory,
             nlink: 0,
@@ -214,6 +232,7 @@ impl WasiDir for DevicesDir {
 // TODO begin to fail when device is removed from the world
 struct OpenDuplexLinkFile {
     link: AttachedDuplexLink,
+    device_number: u32,
     read: bool,
     write: bool,
 }
@@ -242,7 +261,7 @@ impl WasiFile for OpenDuplexLinkFile {
 
     async fn get_filestat(&self) -> Result<Filestat, Error> {
         Ok(Filestat {
-            device_id: 0, // TODO this actually means ethernet[0]
+            device_id: self.device_number as u64,
             inode: 1,
             filetype: FileType::CharacterDevice,
             nlink: 0,

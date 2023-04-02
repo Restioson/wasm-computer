@@ -18,7 +18,7 @@ rustix = "0.37.5"
 cap-std = "1.0.9"
 bitflags = "2.0.2"
 bytemuck = { version = "1.13.1", features = ["derive"] }
-host_api = { path = "../host_api" }
+host_api_sys = { path = "../host_api_sys" }
 event-listener = "2.5.3"
 futures = "0.3.28"
 

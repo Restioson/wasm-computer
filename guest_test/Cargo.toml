@@ -1,7 +1,10 @@
+cargo-features = ["per-package-target"]
+
 [package]
 name = "guest_test"
 version = "0.1.0"
 edition = "2021"
+forced-target = "wasm32-wasi"
 
 [dependencies]
 host_api = { path = "../host_api" }

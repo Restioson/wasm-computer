@@ -1,8 +1,11 @@
+cargo-features = ["per-package-target"]
+
 [package]
 name = "host_api"
 version = "0.1.0"
 edition = "2021"
+forced-target = "wasm32-wasi"
 
 [dependencies]
-bitflags = "2.0.2"
-bytemuck = { version = "1.13.1", features = ["derive"] }
+host_api_sys = { path = "../host_api_sys" }
+bytemuck = "1.13.1"

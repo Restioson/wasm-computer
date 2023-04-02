@@ -1,19 +1,14 @@
 use std::fs::File;
-use std::os::fd::AsRawFd;
-use host_api::{Interest, InterestFlags, Ready};
-use bytemuck::Zeroable;
-use std::io::{Write, Read};
+use std::io::{Read, Write};
+use std::os::fd::{AsFd, AsRawFd};
 use std::time::Instant;
 
-fn wait_for_file(file: &File) {
-    let interests = [
-        Interest {
-            fd: file.as_raw_fd() as u32,
-            interest_flags: InterestFlags::READ.bits(),
-        },
-    ];
-    let mut ready = [Ready::zeroed(); 1];
-    host_api::call_host::notify_ready(&interests, &mut ready);
+fn wait_for_file(file: impl AsFd) {
+    // Loop to avoid spurious wakeups
+    while !host_api::wait_until_ready_for_read(&[file.as_fd()])
+        .iter()
+        .any(|fd| fd.as_fd().as_raw_fd() == file.as_fd().as_raw_fd())
+    {}
 }
 
 fn main() -> std::io::Result<()> {
@@ -27,8 +22,11 @@ fn main() -> std::io::Result<()> {
         file.read_to_string(&mut s).unwrap();
         println!("Got '{}' after {}ms", s, time.elapsed().as_millis());
     } else {
-        let mut file = std::fs::OpenOptions::new().write(true).open("/dev/ethernet0").unwrap();
-        file.write(b"Hello!").unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/ethernet0")
+            .unwrap();
+        file.write_all(b"Hello!").unwrap();
         println!("Written 'Hello!' to /dev/ethernet0");
     }
 
