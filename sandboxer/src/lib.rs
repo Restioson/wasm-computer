@@ -143,6 +143,9 @@ impl ComputerVm {
 
         let mut stdout = self.store.data().stdout.write().unwrap();
         let stdout = BufReadDecoder::read_to_string_lossy(BufReader::new(&mut *stdout)).unwrap();
+
+        println!("=========================================");
+        println!("Computer {} finished execution", self.store.data().computer.read().unwrap().id);
         println!("Stdout: {stdout}");
 
         let mut stderr = self.store.data().stderr.write().unwrap();

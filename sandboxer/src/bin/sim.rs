@@ -12,13 +12,11 @@ async fn main() -> Result<()> {
     let mut computer2 = sandboxer::ComputerVm::launch_module(module, Computer::create()?, "2").await?;
 
     let (link1, link2) = AttachedDuplexLink::new_pair();
-
     computer1.add_ethernet(link1);
     computer2.add_ethernet(link2);
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(3)).await;
-        println!("Resuming 2");
         computer2.resume().await.unwrap()
     });
 
