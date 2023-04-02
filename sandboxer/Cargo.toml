@@ -6,16 +6,21 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wasmtime = "7.0.0"
+wasmtime = { version = "7.0.0", features = ["async"] }
 wasmtime-wasi = "7.0.0"
 wasi-common = "7.0.0"
 anyhow = "1.0.70"
 utf-8 = "0.7.6"
-tokio = { version = "1.27.0", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.27.0", features = ["rt-multi-thread", "macros", "time"] }
 uuid = { version = "1.3.0", features = ["v4"] }
 async-trait = "0.1.68"
 rustix = "0.37.5"
 cap-std = "1.0.9"
+bitflags = "2.0.2"
+bytemuck = { version = "1.13.1", features = ["derive"] }
+host_api = { path = "../host_api" }
+event-listener = "2.5.3"
+futures = "0.3.28"
 
 [[bin]]
 name = "sim"

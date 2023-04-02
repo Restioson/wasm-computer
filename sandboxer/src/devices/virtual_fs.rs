@@ -47,7 +47,6 @@ impl WasiDir for DevicesDir {
     ) -> Result<Box<dyn WasiFile>, Error> {
         let devs = &self.computer.read().unwrap().devices;
 
-        dbg!("Open file", path);
         if flags.intersects(OFlags::all()) {
             return Err(Error::not_supported().context("device supports no opening flags"));
         }
@@ -76,7 +75,6 @@ impl WasiDir for DevicesDir {
             }
             (".", None) => Ok(Box::new(OpenDevDirFile)),
             _ => {
-                dbg!(name, idx);
                 Err(Error::not_found())
             }
         }
@@ -87,12 +85,10 @@ impl WasiDir for DevicesDir {
         _symlink_follow: bool,
         _path: &str,
     ) -> Result<Box<dyn WasiDir>, Error> {
-        dbg!("Open dir");
         Err(Error::not_found().context("/dev/ does not have subdirectories"))
     }
 
     async fn create_dir(&self, _path: &str) -> Result<(), Error> {
-        dbg!("Create dir");
         Err(Error::perm().context("/dev/ is protected"))
     }
 
@@ -101,7 +97,6 @@ impl WasiDir for DevicesDir {
         cursor: ReaddirCursor,
     ) -> Result<Box<dyn Iterator<Item = Result<ReaddirEntity, Error>> + Send>, Error> {
         let devs = &self.computer.read().unwrap().devices;
-        dbg!("Read dir");
         // TODO prepend ., ..
 
         let inode_start = 1;
@@ -247,7 +242,7 @@ impl WasiFile for OpenDuplexLinkFile {
 
     async fn get_filestat(&self) -> Result<Filestat, Error> {
         Ok(Filestat {
-            device_id: 100,
+            device_id: 0, // TODO this actually means ethernet[0]
             inode: 1,
             filetype: FileType::CharacterDevice,
             nlink: 0,
@@ -263,7 +258,7 @@ impl WasiFile for OpenDuplexLinkFile {
             return Err(Error::badf().context("file opened as writeonly"));
         }
 
-        Ok(self.link.read_buf().read_vectored(bufs)? as u64)
+        Ok(self.link.read_buf().buf.read_vectored(bufs)? as u64)
     }
 
     async fn write_vectored<'a>(&self, bufs: &[IoSlice<'a>]) -> Result<u64, Error> {
@@ -272,15 +267,15 @@ impl WasiFile for OpenDuplexLinkFile {
         }
 
         let mut buf = self.link.write_buf();
-        let n = buf.write_vectored(bufs)?;
-        let string = BufReadDecoder::read_to_string_lossy(BufReader::new(&mut *buf)).unwrap();
-        println!("Written into buf: {string}");
+        let n = buf.buf.write_vectored(bufs)?;
+        buf.on_send.notify(usize::MAX);
+
         Ok(n as u64)
     }
 
     fn num_ready_bytes(&self) -> Result<u64, Error> {
         if self.read {
-            Ok(self.link.read_buf().len() as u64)
+            Ok(self.link.read_buf().buf.len() as u64)
         } else {
             Err(Error::badf().context("file opened as writeonly"))
         }

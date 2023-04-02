@@ -1,9 +1,11 @@
-mod devices;
+pub mod devices;
+mod host_api;
 
-use crate::devices::{virtual_fs::DevicesDir, Devices};
+use crate::devices::{virtual_fs::DevicesDir, Devices, AttachedDuplexLink};
 use anyhow::Result;
 use std::collections::VecDeque;
 use std::io::BufReader;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use utf8::BufReadDecoder;
@@ -30,12 +32,16 @@ impl Computer {
     pub fn create() -> Result<Computer> {
         let computer = Computer {
             id: Uuid::new_v4(),
-            devices: Devices::new_sink(),
+            devices: Devices::new(),
         };
 
         std::fs::create_dir_all(computer.home_dir())?;
 
         Ok(computer)
+    }
+
+    pub fn devices_mut(&mut self) -> &mut Devices {
+        &mut self.devices
     }
 
     pub fn root_dir(&self) -> PathBuf {
@@ -51,7 +57,7 @@ impl Computer {
     }
 }
 
-struct ComputerVmState {
+pub struct ComputerVmState {
     wasi: WasiCtx,
     stdout: Arc<RwLock<VecDeque<u8>>>,
     stderr: Arc<RwLock<VecDeque<u8>>>,
@@ -103,13 +109,17 @@ pub struct ComputerVm {
 }
 
 impl ComputerVm {
-    pub async fn launch_module(module: Module, computer: Computer) -> Result<ComputerVm> {
+    pub async fn launch_module(module: Module, computer: Computer, arg: &str) -> Result<ComputerVm> {
         let mut store = Store::new(module.engine(), ComputerVmState::new(computer)?);
         // store.epoch_deadline_async_yield_and_update(100); // TODO epoch interruption
 
+        // TODO: reuse linker
         let mut linker = Linker::new(module.engine());
         wasmtime_wasi::add_to_linker(&mut linker, |s: &mut ComputerVmState| &mut s.wasi)?;
+        host_api::add_exports(&mut linker)?;
         linker.module_async(&mut store, "", &module).await?;
+
+        store.data_mut().wasi.push_arg(arg)?;
 
         let main_func = linker.get_default(&mut store, "")?;
 
@@ -117,6 +127,10 @@ impl ComputerVm {
             main_thread: main_func,
             store,
         })
+    }
+
+    pub fn add_ethernet(&mut self, link: AttachedDuplexLink) {
+        self.store.data_mut().computer.write().unwrap().devices_mut().add_ethernet(link)
     }
 
     pub async fn resume(&mut self) -> Result<()> {
@@ -134,8 +148,6 @@ impl ComputerVm {
         let mut stderr = self.store.data().stderr.write().unwrap();
         let stderr = BufReadDecoder::read_to_string_lossy(BufReader::new(&mut *stderr)).unwrap();
         println!("Stderr: {stderr}");
-
-        dbg!(self.store.data().wasi.table.contains_key(9));
 
         match res {
             Ok(_) => Ok(()),

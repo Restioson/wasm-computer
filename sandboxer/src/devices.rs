@@ -1,38 +1,37 @@
 pub mod virtual_fs;
 
+use crate::ComputerVmState;
+use anyhow::{Context, Result};
 use std::collections::VecDeque;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::task::{Poll, Waker};
+use event_listener::{Event, EventListener};
+use futures::future::Either;
+use wasmtime::{AsContextMut, Func};
 
-struct DuplexLink {
-    // TODO: inode, device id
-    duplex_bufs: [Mutex<VecDeque<u8>>; 2],
+#[derive(Default)]
+struct Buffer {
+    buf: VecDeque<u8>,
+    on_send: Event,
 }
 
-impl DuplexLink {
-    fn new() -> DuplexLink {
-        DuplexLink {
-            duplex_bufs: [Mutex::new(VecDeque::new()), Mutex::new(VecDeque::new())],
-        }
-    }
+#[derive(Default)]
+struct DuplexLink {
+    // TODO: inode, device id
+    duplex_bufs: [Mutex<Buffer>; 2],
 }
 
 #[derive(Clone)]
-struct AttachedDuplexLink {
+pub struct AttachedDuplexLink {
     first_half: bool,
     shared: Arc<DuplexLink>,
 }
 
 impl AttachedDuplexLink {
-    /// One-sided attached duplex link that writes into the void
-    fn new_sink() -> AttachedDuplexLink {
-        AttachedDuplexLink {
-            first_half: true,
-            shared: Arc::new(DuplexLink::new()),
-        }
-    }
-
-    fn new_pair() -> (AttachedDuplexLink, AttachedDuplexLink) {
-        let shared = Arc::new(DuplexLink::new());
+    pub fn new_pair() -> (AttachedDuplexLink, AttachedDuplexLink) {
+        let shared = Arc::new(DuplexLink::default());
 
         let first = AttachedDuplexLink {
             first_half: true,
@@ -46,7 +45,7 @@ impl AttachedDuplexLink {
         (first, second)
     }
 
-    fn read_buf(&self) -> MutexGuard<'_, VecDeque<u8>> {
+    fn read_buf(&self) -> MutexGuard<'_, Buffer> {
         if self.first_half {
             self.shared.duplex_bufs[1].lock().unwrap()
         } else {
@@ -54,13 +53,17 @@ impl AttachedDuplexLink {
         }
     }
 
-    fn write_buf(&self) -> MutexGuard<'_, VecDeque<u8>> {
+    fn write_buf(&self) -> MutexGuard<'_, Buffer> {
         if self.first_half {
             self.shared.duplex_bufs[0].lock().unwrap()
         } else {
             self.shared.duplex_bufs[1].lock().unwrap()
         }
     }
+}
+
+struct Notifier {
+    waker: Waker,
 }
 
 pub struct Devices {
@@ -69,13 +72,27 @@ pub struct Devices {
 }
 
 impl Devices {
-    pub fn new_sink() -> Self {
+    pub fn new() -> Devices {
         Devices {
-            ethernet_links: vec![
-                AttachedDuplexLink::new_sink(),
-                AttachedDuplexLink::new_sink(),
-            ],
-            wireless_links: vec![AttachedDuplexLink::new_sink()],
+            ethernet_links: vec![],
+            wireless_links: vec![],
+        }
+    }
+
+    pub fn add_ethernet(&mut self, link: AttachedDuplexLink) {
+        self.ethernet_links.push(link);
+    }
+
+    pub fn is_ready_for_read(&self, device_id: u64) -> bool {
+        self.ethernet_links[device_id as usize].read_buf().buf.len() > 0
+    }
+
+    pub fn wait_until_ready_for_read(&self, device_id: u64) -> impl Future<Output = ()> + Unpin {
+        let listener = self.ethernet_links[device_id as usize].read_buf().on_send.listen();
+        if !self.is_ready_for_read(device_id) {
+            Either::Left(listener)
+        } else {
+            Either::Right(futures::future::ready(()))
         }
     }
 }
